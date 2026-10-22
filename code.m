@@ -1,16 +1,16 @@
-%% 1.裁剪点云
+%% 1. Crop point cloud
 % ptCloud = pcread('F:/shanghai-img-0.pcd');
 % removeInvalidPoints(ptCloud);
-% % 获取点云中所有点的坐标
+% % Get the coordinates of all points in the point cloud
 % points = ptCloud.Location;
 % idx = points(:, 1) >= 35 & points(:, 1) <= 65;
-% % 保留这些点
+% % Keep these points
 % ptCloud = select(ptCloud, idx);
-% % 保存修改后的点云文件
+% % Save the modified point cloud file
 % pcwrite(ptCloud, '1.pcd');
 
-%% 2.读入剪切之后的文件，截取在y坐标88.5到91.5处的点
-% y的范围必须大于1个孔径，否则会出错
+%% 2. Read the cropped file and extract points at y-coordinates 88.5 to 91.5
+% The y range must be greater than one aperture, otherwise an error will occur
 tic;
 ptCloud = pcread('11.pcd');
 figure
@@ -24,23 +24,23 @@ PlotCuboid([37,48,33.5],[30,0.1,3]);
 points = ptCloud.Location;
 idx = points(:, 2) >=43.5 & points(:, 2) <= 46.5;
 %18-21 43-46
-%28-31(误判)
+%28-31 (misjudged)
 ptCloud2 = select(ptCloud, idx);
-ptCloud2 = pcdenoise(ptCloud2);  % 滤除噪声
-projectedPoints = ptCloud2.Location(:, [1, 3]);  % 保留x，z维度的坐标
+ptCloud2 = pcdenoise(ptCloud2);  % Filter out noise
+projectedPoints = ptCloud2.Location(:, [1, 3]);  % Keep x and z coordinates
 
-%% 3.提取点云轮廓（上边界），结果保存在boundaries数组中
-num_points = ceil([ptCloud2.XLimits(2) - ptCloud2.XLimits(1)]/0.05);  % 点云截面图提取截面之后的点数
+%% 3. Extract the point cloud contour (upper boundary); the result is saved in the boundaries array
+num_points = ceil([ptCloud2.XLimits(2) - ptCloud2.XLimits(1)]/0.05);  % Number of points after extracting the cross-section from the point cloud cross-section plot
 boundaries = zeros(1,num_points); 
-X = ptCloud2.XLimits(1):0.05:ptCloud2.XLimits(1)+(num_points-1)*0.05;  % 生成x坐标备用
-for i = 1:ptCloud2.Count  % 遍历点云中的所有点
-    a = ceil([ptCloud2.Location(i) - ptCloud2.XLimits(1) + 0.0001]/0.05);  % 加一个小偏置0.0001
+X = ptCloud2.XLimits(1):0.05:ptCloud2.XLimits(1)+(num_points-1)*0.05;  % Generate x coordinates for later use
+for i = 1:ptCloud2.Count  % Traverse all points in the point cloud
+    a = ceil([ptCloud2.Location(i) - ptCloud2.XLimits(1) + 0.0001]/0.05);  % Add a small offset of 0.0001
     if boundaries(a) < ptCloud2.Location(i,3)
         boundaries(a) = ptCloud2.Location(i,3);
     end
 end
 
-% 画图
+% Plot
 figure
 scatter(projectedPoints(:,1), projectedPoints(:,2), 5, 'filled');
 hold on
@@ -49,16 +49,16 @@ Y = spline(X, boundaries, XX);
 plot(XX, Y, 'Color', 'k', 'linewidth', 2.0);
 xlabel("X")
 ylabel("Z")
-% title('点云上边界提取示意图（未删除离群点）');
+% title('Schematic of point cloud upper boundary extraction (outliers not removed)');
 
-%% 4.对所有点求回归
-% 来一手回归，计算分割平面并用红色表示，返回coefficients是回归直线的斜率和截距
+%% 4. Perform regression on all points
+% Perform a regression, calculate the segmentation plane, and represent it in red. The returned coefficients are the slope and intercept of the regression line.
 coefficients = polyfit(transpose(ptCloud2.XLimits(1):0.05:ptCloud2.XLimits(1)+(num_points-1)*0.05),transpose(boundaries),1);
 
-%% 5.求平面表面的拟合直线方程，结果保存在coefficients2中
-% 求5中在回归直线以上部分的所有点的质心(x_ba,y_ba)，把直线向上平移使其过质心
-% 因为有凹槽不好拟合平面表面，所以我们要把前面计算的回归直线上平移
-% 可以视情况多迭代几次，在本次给定的文件下一次计算足够
+%% 5. Find the fitted line equation of the plane surface; the result is saved in coefficients2
+% Find the centroid (x_ba,y_ba) of all points above the regression line in step 5, and translate the line upward so that it passes through the centroid.
+% Because there are grooves, it is difficult to fit the plane surface, so we need to translate the previously calculated regression line upward.
+% You can iterate several times as needed; in the file given this time, one calculation is sufficient.
 x_ba = 0;
 y_ba = 0;
 count = 0;
@@ -72,101 +72,101 @@ for i = 1:num_points
 end
 x_ba = x_ba/count;
 y_ba = y_ba/count;
-coefficients2 = [coefficients(1) y_ba-coefficients(1)*x_ba];  % 修正后的平面，用来拟合加工板表面，用绿色表示
+coefficients2 = [coefficients(1) y_ba-coefficients(1)*x_ba];  % Corrected plane, used to fit the machined plate surface, shown in green
 
-%% 6.去除离群点
-% 因为我们发现有的采样点远高于平板平面，而且pcdenoise滤除不掉
-% 所以我们自己设定一个阈值把远高于平板平面的点滤除掉，这里设置为0.04
-% 这里写的比较简单，后面可以再开发算法
+%% 6. Remove outliers
+% Because we found that some sampled points are much higher than the plate plane, and pcdenoise cannot filter them out,
+% we set a threshold ourselves to filter out points far above the plate plane. Here it is set to 0.04.
+% This is written simply here and can be developed into an algorithm later.
 for i = 1:num_points
     if boundaries(i) - (coefficients2(1) * X(i) + coefficients2(2)) > 0.04
         boundaries(i) = coefficients2(1) * X(i) + coefficients2(2);
     end
 end
 
-% 画图，并作三次样条插值
+% Plot and perform cubic spline interpolation
 figure
-scatter(projectedPoints(:,1), projectedPoints(:,2), 5, [0, 1, 1],'filled');  % 点云XOZ平面投影数据
+scatter(projectedPoints(:,1), projectedPoints(:,2), 5, [0, 1, 1],'filled');  % Point cloud projection data on the XOZ plane
 hold on
 % plot(X, boundaries, 'blue');
-plot(XX, Y, 'Color', [0.5, 0.5, 0.5], 'linewidth', 2.0);  % 边界提取线（未去除离群点）
+plot(XX, Y, 'Color', [0.5, 0.5, 0.5], 'linewidth', 2.0);  % Extracted boundary line (outliers not removed)
 hold on;
-plot(X, coefficients(1)*X+coefficients(2), 'Color', [0, 0.79, 0.34], 'linewidth', 2.0);  % 边界线所有点最小二乘拟合线
-plot(X, coefficients2(1)*X+coefficients2(2), 'red','linewidth', 2.0);  % 经迭代平移的最终拟合线
+plot(X, coefficients(1)*X+coefficients(2), 'Color', [0, 0.79, 0.34], 'linewidth', 2.0);  % Least-squares fitted line for all boundary points
+plot(X, coefficients2(1)*X+coefficients2(2), 'red','linewidth', 2.0);  % Final fitted line after iterative translation
 plot(X, boundaries, 'Color', 'k', 'linewidth', 2.0);
 plot(x_ba, y_ba, 'o', 'MarkerFaceColor', 'm', 'MarkerSize', 10)
 legend('Point cloud XOZ plane projection','Cross-section line(Outliers not removed)','Least-squares fitted line(First calculation)','Least-squares fitted line(After iterations of calculation)','Cross-section line(Outliers removed)', 'The iteration points calculated by the least squares iterative method');
 xlabel("X(mm)")
 ylabel("Z(mm)")
 box on;
-% title('点云上边界提取示意图（已删除漂浮离群点）');
+% title('Schematic of point cloud upper boundary extraction (floating outliers removed)');
 
 figure
 plot(X, boundaries, 'Color', 'k', 'linewidth', 2.0);
 hold on;
 plot(X, coefficients2(1)*X+coefficients2(2), 'red','linewidth', 2.0);
-legend('边界提取线（去除离群点）','经迭代平移的最终拟合线');
+legend('Boundary extraction line (outliers removed)','Final fitted line after iterative translation');
 xlabel("X(mm)")
 ylabel("Z(mm)")
-% title('点云上边界提取示意图（已删除漂浮离群点）');
+% title('Schematic of point cloud upper boundary extraction (floating outliers removed)');
 
-%% 8.计算豁口位置
-% distance数组记录每个点到6中表面的距离
-% 因为平板摆放不可能完全水平，可能会有误差
-distance = zeros(1, num_points);  % 每个点到绿线的距离
+%% 8. Calculate notch positions
+% The distance array records the distance from each point to the surface in step 6.
+% Because the plate cannot be placed perfectly horizontally, there may be errors.
+distance = zeros(1, num_points);  % Distance from each point to the green line
 for i = 1:num_points
     distance(i) = abs(coefficients2(1)*X(i) - boundaries(i) + coefficients2(2))/sqrt(1+coefficients2(1)^2);
 end
 
-% 先计算点的左邻域点集，右邻域点集的深度之和（这里两侧各取15个点），然后做比值运算（这里拿右边除左边）。
-% 如果这个比值很大，说明此点右侧显著的比左侧深，它就是豁口的分界点；
-% 反之如果这个比值很小，说明左侧显著比右侧深，它也是豁口分界点。
-% 如果是平面，这个比值应该接近于1.
+% First calculate the sum of depths of the left-neighborhood point set and the right-neighborhood point set (15 points on each side here), then perform a ratio operation (here divide the right side by the left side).
+% If this ratio is large, it means the right side of this point is significantly deeper than the left side, so it is the boundary point of a notch.
+% Conversely, if this ratio is very small, it means the left side is significantly deeper than the right side, and it is also a notch boundary point.
+% For a flat surface, this ratio should be close to 1.
 distance_ratio = zeros(1, num_points - 30);
 for i = 16:num_points - 15
     left = sum(distance(i-15:i));
     right = sum(distance(i:i+15));
     distance_ratio(i-15) = log2(right/left);
 end
-% locs1代表着4个豁口开始位置的索引
-% % 利用findpeaks寻找峰值，这里'minpeakheight'代表最小峰值，'minpeakdistance'代表最小峰与峰之间的间隔
+% locs1 represents the indices of the start positions of the 4 notches.
+% % Use findpeaks to find peaks. Here 'minpeakheight' represents the minimum peak height, and 'minpeakdistance' represents the minimum interval between peaks.
 % [pks1,locs1] = findpeaks(distance_ratio, 'minpeakheight', 5,'minpeakdistance', num_points/(num_gully+2));
 
 [pks,locs] = findpeaks(distance_ratio);
 locs = locs + 15;
-% 改用AMPD算法寻找峰值
+% Use the AMPD algorithm to find peaks instead
 locs1 = AMPD(distance_ratio);
-locs1 = locs1 + 15;  % 注意到我们是从第16个点开始计算的
+locs1 = locs1 + 15;  % Note that we started calculating from the 16th point
 
 % d = rand(1, 200);
 % d = 2 * (d-1/2);
 % distance_ratio = [distance_ratio,d];
-% X = ptCloud2.XLimits(1):0.05:ptCloud2.XLimits(1)+(num_points+200-1)*0.05;  % 生成x坐标备用
+% X = ptCloud2.XLimits(1):0.05:ptCloud2.XLimits(1)+(num_points+200-1)*0.05;  % Generate x coordinates for later use
 
-% 画个图，为了说明白，这里应该有4个波峰和4个波谷，分别对应4个豁口的开始和结束
+% Draw a figure. For clarity, there should be 4 peaks and 4 valleys here, corresponding to the start and end of the 4 notches.
 figure
 plot(X(16:num_points-15), distance_ratio, 'black','linewidth', 2.0);
 hold on
 scatter(X(locs),distance_ratio(locs-15), 40, "red", "filled");
 xlabel("X(mm)");
 ylabel("Depth ratio feature");
-% title('左右邻域比值随位置变化示意图，这里应该有4个波峰和4个波谷');
+% title('Schematic of the left-right neighborhood ratio changing with position; there should be 4 peaks and 4 valleys here');
 
 distance_ratio(locs1-15)
 
-% 再反过来，拿左边除以右面，相同的操作再来一遍
+% Reverse the ratio: divide the left side by the right side, and repeat the same operation.
 for i = 16:num_points - 15
     left = sum(distance(i-15:i));
     right = sum(distance(i:i+15));
     distance_ratio(i-15) = log2(left/right);
 end
 
-% locs2代表着4个豁口结束位置的索引
+% locs2 represents the indices of the end positions of the 4 notches.
 % [pks2,locs2] = findpeaks(distance_ratio, 'minpeakheight', 5,'minpeakdistance', num_points/(num_gully+2));
 locs2 = AMPD(distance_ratio);
-locs2 = locs2 + 15;  % 注意到我们是从第16个点开始计算的
+locs2 = locs2 + 15;  % Note that we started calculating from the 16th point
 
-% 再画个图
+% Draw another figure
 figure
 plot(X(16:num_points-15), distance_ratio, 'black','linewidth', 2.0);
 hold on
@@ -175,50 +175,50 @@ xlabel("X(mm)");
 ylabel("Depth ratio feature");
 
 distance_ratio(locs2-15)
-% 指定输出的Excel文件名  
+% Specify the output Excel file name
 filename = 'output.xlsx';  
 
-% 将数组写入Excel文件，默认从第一个单元格开始  
+% Write the array to the Excel file, starting from the first cell by default
 writematrix(distance_ratio, filename);
 
-% 验证算法有效性
+% Verify the effectiveness of the algorithm
 if length(locs2) == length(locs1)
-    fprintf('算法有效！');
+    fprintf(The algorithm is effective!');
 else
-    error('算法出错');
+    error('The algorithm went wrong!');
 end
 
-%% 9.计算槽深
+%% 9. Calculate groove depth
 depth = zeros(1, length(locs1));
-fprintf('每条沟的深度是：')
+fprintf('The depth of each groove is：')
 for i = 1:length(locs1)
     [m,p]=max(distance(locs1(i):locs2(i))); 
     depth(i) = m;
     disp(m);
 end
 
-%% 10.计算槽宽
-% 槽宽是两个槽口点连线距离在平面方向上的投影长度
+%% 10. Calculate groove width
+% The groove width is the projection length of the line connecting the two notch points in the plane direction.
 width = zeros(1, length(locs1));
-fprintf('每条沟的宽度是：')
+fprintf(The width of each groove is：')
 for i = 1:length(locs1)
     width(i) = abs(X(locs1(i))-X(locs2(i))) * sqrt(1+coefficients2(1)^2);
     disp(width(i));
 end
 
-%% 11.画图
-% 画图;
+%% 11. Plot
+% Plot;
 figure
 h1 = plot(X, boundaries, 'black','linewidth', 2.0);
 hold on;
 %plot(X, coefficients(1)*X+coefficients(2), 'yellow');
 h2 = plot(X, coefficients2(1)*X+coefficients2(2), 'red','linewidth', 2.0);
 for i = 1:num_points
-    if locs1(locs1 == i)  % 如果i等于数组locs1里面的数字
-        plot(X(i), boundaries(i), 'o', 'MarkerFaceColor', 'b', 'MarkerSize', 10);  % 豁口点，用实心点表示
+    if locs1(locs1 == i)  % If i equals a number in the locs1 array
+        plot(X(i), boundaries(i), 'o', 'MarkerFaceColor', 'b', 'MarkerSize', 10);  % Notch point, represented by a filled marker
         hold on;
     elseif locs2(locs2 == i) 
-        plot(X(i), boundaries(i), 'o', 'MarkerFaceColor', 'm', 'MarkerSize', 10);  % 豁口点，用实心点表示
+        plot(X(i), boundaries(i), 'o', 'MarkerFaceColor', 'm', 'MarkerSize', 10);  % Notch point, represented by a filled marker
         hold on;
     end
 end
@@ -235,17 +235,17 @@ ylabel("Z(mm)")
 
 
 toc;
-disp(['运行时间: ',num2str(toc)]);
+disp(['time: ',num2str(toc)]);
 
 
-%% 12.点云处理
+%% 12. Point cloud processing
 % circle = abs(ptCloud.YLimits(2) - ptCloud.YLimits(1));
 % radius = circle/(2*pi);
 % new_locations = ptCloud.Location;
 % 
-% for i = 1:length(new_locations)  % 遍历点云中的所有点
+% for i = 1:length(new_locations)  % Traverse all points in the point cloud
 %     d = (new_locations(i,3) - coefficients2(1)*new_locations(i,1) - coefficients2(2))/sqrt(1+coefficients2(1)^2);
-%     theta = (new_locations(i,2) - ptCloud.YLimits(1)) / radius;  %弧度制
+%     theta = (new_locations(i,2) - ptCloud.YLimits(1)) / radius;  % Radians
 %     r = radius - d;
 %     new_locations(i,2) = r * sin(theta);
 %     new_locations(i,3) = radius - r * cos(theta);
@@ -263,21 +263,21 @@ disp(['运行时间: ',num2str(toc)]);
 % daspect([8 1 1]);
 % pcwrite(ptCloud3, 'circle.pcd');
 
-%% AMPD算法
+%% AMPD algorithm
 function peak_indices = AMPD(data)
-    % 实现AMPD算法
-    % param data: 1-D 数组
-    % return: 波峰所在索引值的数组
+    % Implement the AMPD algorithm
+    % param data: 1-D array
+    % return: array of indices where peaks are located
     
     count = length(data);
     p_data = zeros(size(data), 'int32');
     arr_rowsum = [];
     
-    for k = 2:floor(count / 2) + 1   % k是所有可能的窗口长度
+    for k = 2:floor(count / 2) + 1   % k is all possible window lengths
         row_sum = 0;
-        for i = k : count - k   % 遍历整个序列
+        for i = k : count - k   % Traverse the entire sequence
             if data(i) > data(i - k + 1) && data(i) > data(i + k - 1)
-                row_sum = row_sum - 1;  % 满足这个条件row_sum-1  
+                row_sum = row_sum - 1;  % If this condition is satisfied, row_sum-1
             end
         end
     arr_rowsum(k-1) = row_sum;
@@ -297,26 +297,26 @@ function peak_indices = AMPD(data)
 end
 
 function PlotCuboid(originPoint,cuboidSize)
-    % 函数功能： 绘制长方体
-    % 输入：
-    %       originPoint：长方体的原点,行向量，如[0，0，0];
-    %       cuboidSize：长方体的长宽高,行向量，如[10，20，30];
-    % 输出：长方体图形
+    % Function: draw a cuboid
+    % Input:
+    %       originPoint: origin of the cuboid, row vector, such as [0,0,0];
+    %       cuboidSize: length, width, and height of the cuboid, row vector, such as [10,20,30];
+    % Output: cuboid graphic
     
-    % 根据原点和尺寸，计算长方体的8个的顶点
+    % Calculate the 8 vertices of the cuboid based on the origin and size
     vertexIndex=[0 0 0;0 0 1;0 1 0;0 1 1;1 0 0;1 0 1;1 1 0;1 1 1];
     vertex=originPoint+vertexIndex.*cuboidSize;
     
-    % 定义6个平面分别对应的顶点
+    % Define the vertices corresponding to the 6 planes
     facet=[1 2 4 3;1 2 6 5;1 3 7 5;2 4 8 6;3 4 8 7;5 6 8 7];
     
-    % 定义8个顶点的颜色，绘制的平面颜色根据顶点的颜色进行插补
+    % Define the colors of the 8 vertices; the colors of the drawn planes are interpolated according to the vertex colors
     color=[1;2;3;4;5;6;7;8];
     
-    % 绘制并展示图像
-    % patch 对图像进行绘制。
-    % view(3) 将图像放到三维空间中展示。
-    % 其余的是设置背景等等
+    % Draw and display the image
+    % patch draws the image.
+    % view(3) displays the image in 3-D space.
+    % The rest are settings for the background, etc.
     patch('Vertices',vertex,'Faces',facet,'FaceVertexCData',color,'FaceColor','interp','FaceAlpha',0.5);
     view(3);
     xlabel('X(mm)');
@@ -327,8 +327,3 @@ function PlotCuboid(originPoint,cuboidSize)
     fig.Name='cuboid';
     fig.NumberTitle='off';
 end
-
-
-
-
-
